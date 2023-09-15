@@ -8,8 +8,6 @@ import jax.numpy as jnp
 from jax.sharding import PartitionSpec as PS
 from jax.sharding import Mesh, NamedSharding
 from jax.experimental import mesh_utils
-from jax.experimental.pjit import with_sharding_constraint as _with_sharding_constraint
-from jax.experimental.pjit import pjit
 
 from scalax.utils import named_tree_map
 
@@ -86,6 +84,7 @@ class TreePathShardingRule(ShardingRule):
 
 class MeshShardingHelper(object):
     """ Helper class for creating jit sharding jax functions with sharding rules. """
+    global_mesh_helper = None
 
     def __init__(self, axis_dims, axis_names, mesh_axis_splitting=True):
         mesh_shape = np.arange(jax.device_count()).reshape(axis_dims).shape
@@ -94,6 +93,17 @@ class MeshShardingHelper(object):
         else:
             physical_mesh = mesh_utils.create_device_mesh(mesh_shape)
         self.mesh = Mesh(physical_mesh, axis_names)
+        self.previous_global_meshes = []
+
+    def __enter__(self):
+        # Use current mesh as global mesh
+        self.previous_global_meshes.append(MeshShardingHelper.global_mesh_helper)
+        MeshShardingHelper.global_mesh_helper = self
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Restore last global mesh
+        MeshShardingHelper.global_mesh_helper = self.previous_global_meshes.pop()
 
     def split_static_dynamic_args(self, static_argnums, args):
         if static_argnums is None:
@@ -175,12 +185,22 @@ class MeshShardingHelper(object):
             )
 
             static_args_jitted_fn_cache[static_args] = jitted_fn
-            return jitted_fn(*args)
+
+            with self:
+                results = jitted_fn(*args)
+            return results
 
         return wrapped
 
+    @classmethod
+    def with_sharding_constraint(cls, pytree, sharding_rule):
+        # Enforce shard constraint with global mesh
+        if cls.global_mesh_helper is None:
+            return pytree
+        partition_specs = cls.global_mesh_helper.match_sharding_rule(sharding_rule, pytree)
+        return jax.lax.with_sharding_constraint(pytree, partition_specs)
 
-    def make_shard_and_gather_fns(self, sharding_rule, pytree):
+    def make_shard_and_gather_fns(self, pytree, sharding_rule):
         """ Create pytree of sharding and gathering functions from sharding rule
             or a pytree of PartitionSpecs. This can be used to shard and gather
             a pytree of tensors.
