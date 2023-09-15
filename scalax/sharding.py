@@ -25,17 +25,38 @@ class ShardingRule(abc.ABC):
 class FSDPShardingRule(ShardingRule):
     """ Create FSDP sharding PartitionSpec for a pytree. """
 
-    def __init__(self, fsdp_axis_name='fsdp', min_fsdp_size=1048576):
+    def __init__(self, fsdp_axis_name='fsdp', fsdp_axis_size=None, min_fsdp_size=1048576):
         self.fsdp_axis_name = fsdp_axis_name
+        self.fsdp_axis_size = fsdp_axis_size
         self.min_fsdp_size = min_fsdp_size
+
+    def largest_power_of_two_divisor(self, n):
+        k = 0
+        while n % 2 == 0:
+            n //= 2
+            k += 1
+        return 2 ** k
 
     def apply(self, pytree):
         def get_partition_spec(tensor):
             # We only shard the float weights
             if np.prod(tensor.shape) >= self.min_fsdp_size:
                 partition_spec = [None for _ in range(len(tensor.shape))]
-                partition_spec[np.argmax(tensor.shape)] = self.fsdp_axis_name
-                return PS(*partition_spec)
+                if self.fsdp_axis_size is None:
+                    # Guess the FSDP axis size is a power of two
+                    allowed_sizes = [
+                        -self.largest_power_of_two_divisor(n)
+                        for n in tensor.shape
+                    ]
+                    for i in np.argsort(allowed_sizes):
+                        if tensor.shape[i] > 1:
+                            partition_spec[i] = self.fsdp_axis_name
+                            return PS(*partition_spec)
+                else:
+                    for i in np.argsort([-x for x in tensor.shape]):
+                        if tensor.shape[i] % self.fsdp_axis_size == 0:
+                                partition_spec[i] = self.fsdp_axis_name
+                                return PS(*partition_spec)
             return PS()
 
         return jax.tree_util.tree_map(get_partition_spec, pytree)
