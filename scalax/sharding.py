@@ -5,7 +5,7 @@ import numpy as np
 
 import jax
 import jax.numpy as jnp
-from jax.sharding import PartitionSpec as PS
+from jax.sharding import PartitionSpec
 from jax.sharding import Mesh, NamedSharding
 from jax.experimental import mesh_utils
 
@@ -49,13 +49,13 @@ class FSDPShardingRule(ShardingRule):
                     for i in np.argsort(allowed_sizes):
                         if tensor.shape[i] > 1:
                             partition_spec[i] = self.fsdp_axis_name
-                            return PS(*partition_spec)
+                            return PartitionSpec(*partition_spec)
                 else:
                     for i in np.argsort([-x for x in tensor.shape]):
                         if tensor.shape[i] % self.fsdp_axis_size == 0:
-                                partition_spec[i] = self.fsdp_axis_name
-                                return PS(*partition_spec)
-            return PS()
+                            partition_spec[i] = self.fsdp_axis_name
+                            return PartitionSpec(*partition_spec)
+            return PartitionSpec()
 
         return jax.tree_util.tree_map(get_partition_spec, pytree)
 
@@ -72,13 +72,13 @@ class TreePathShardingRule(ShardingRule):
         def get_partition_spec(name, leaf):
             if len(leaf.shape) == 0 or np.prod(leaf.shape) == 1:
                 """ Don't partition scalar values. """
-                return PS()
+                return PartitionSpec()
             for rule, ps in self.rules:
                 if re.search(rule, name) is not None:
                     return ps
             if self.strict:
                 raise ValueError(f'Partition rule not found for param: {name}')
-            return PS()
+            return PartitionSpec()
         return named_tree_map(get_partition_spec, pytree, sep='/')
 
 
@@ -132,7 +132,18 @@ class MeshShardingHelper(object):
                     lambda x: NamedSharding(self.mesh, rule),
                     pytree
                 )
-        return jax.tree_util.tree_map(get_partition_spec, sharding_rules, pytree)
+
+        def is_leaf(x):
+            # Check if the node is None, a PartitionSpec or a ShardingRule
+            return (
+                x is None
+                or isinstance(x, ShardingRule)
+                or isinstance(x, PartitionSpec)
+            )
+
+        return jax.tree_util.tree_map(
+            get_partition_spec, sharding_rules, pytree, is_leaf=is_leaf
+        )
 
     def sharded_jit(self,
                     fun,
@@ -149,9 +160,9 @@ class MeshShardingHelper(object):
                     _args_sharding_constraint = tuple(args_sharding_constraint)
                 else:
                     _args_sharding_constraint = args_sharding_constraint
-                partition_specs = self.match_sharding_rule(_args_sharding_constraint, args)
+                named_shardings = self.match_sharding_rule(_args_sharding_constraint, args)
                 static_args, dynamic_args = self.split_static_dynamic_args(static_argnums, args)
-                dynamic_args = jax.lax.with_sharding_constraint(dynamic_args, partition_specs)
+                dynamic_args = jax.lax.with_sharding_constraint(dynamic_args, named_shardings)
                 args = self.combine_static_dynamic_args(static_argnums, static_args, dynamic_args)
             return fun(*args)
 
@@ -197,15 +208,15 @@ class MeshShardingHelper(object):
         # Enforce shard constraint with global mesh
         if cls.global_mesh_helper is None:
             return pytree
-        partition_specs = cls.global_mesh_helper.match_sharding_rule(sharding_rule, pytree)
-        return jax.lax.with_sharding_constraint(pytree, partition_specs)
+        named_shardings = cls.global_mesh_helper.match_sharding_rule(sharding_rule, pytree)
+        return jax.lax.with_sharding_constraint(pytree, named_shardings)
 
     def make_shard_and_gather_fns(self, pytree, sharding_rule):
         """ Create pytree of sharding and gathering functions from sharding rule
             or a pytree of PartitionSpecs. This can be used to shard and gather
             a pytree of tensors.
         """
-        partition_specs = self.match_sharding_rule(sharding_rule, pytree)
+        named_shardings = self.match_sharding_rule(sharding_rule, pytree)
         def make_shard_fn(partition_spec):
             jax_shard_function = jax.jit(
                 lambda x: x,
@@ -226,8 +237,8 @@ class MeshShardingHelper(object):
                 return jax.device_get(jax_gather_fn(tensor))
             return gather_fn
 
-        shard_fns = jax.tree_util.tree_map(make_shard_fn, partition_specs)
-        gather_fns = jax.tree_util.tree_map(make_gather_fn, partition_specs)
+        shard_fns = jax.tree_util.tree_map(make_shard_fn, named_shardings)
+        gather_fns = jax.tree_util.tree_map(make_gather_fn, named_shardings)
         return shard_fns, gather_fns
 
     @classmethod
