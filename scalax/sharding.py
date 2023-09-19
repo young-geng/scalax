@@ -105,14 +105,14 @@ class MeshShardingHelper(object):
         # Restore last global mesh
         MeshShardingHelper.global_mesh_helper = self.previous_global_meshes.pop()
 
-    def split_static_dynamic_args(self, static_argnums, args):
+    def _split_static_dynamic_args(self, static_argnums, args):
         if static_argnums is None:
             return None, args
         static_args = tuple(args[i] for i in static_argnums)
         dynamic_args = tuple(args[i] for i in range(len(args)) if i not in static_argnums)
         return static_args, dynamic_args
 
-    def combine_static_dynamic_args(self, static_argnums, static_args, dynamic_args):
+    def _combine_static_dynamic_args(self, static_argnums, static_args, dynamic_args):
         if static_argnums is None:
             return dynamic_args
         args = list(dynamic_args)
@@ -120,7 +120,7 @@ class MeshShardingHelper(object):
             args.insert(i, arg)
         return tuple(args)
 
-    def match_sharding_rule(self, sharding_rules, pytree):
+    def _match_sharding_rule(self, sharding_rules, pytree):
         def get_partition_spec(rule, pytree):
             if isinstance(rule, ShardingRule):
                 return jax.tree_util.tree_map(
@@ -160,10 +160,10 @@ class MeshShardingHelper(object):
                     _args_sharding_constraint = tuple(args_sharding_constraint)
                 else:
                     _args_sharding_constraint = args_sharding_constraint
-                named_shardings = self.match_sharding_rule(_args_sharding_constraint, args)
-                static_args, dynamic_args = self.split_static_dynamic_args(static_argnums, args)
+                named_shardings = self._match_sharding_rule(_args_sharding_constraint, args)
+                static_args, dynamic_args = self._split_static_dynamic_args(static_argnums, args)
                 dynamic_args = jax.lax.with_sharding_constraint(dynamic_args, named_shardings)
-                args = self.combine_static_dynamic_args(static_argnums, static_args, dynamic_args)
+                args = self._combine_static_dynamic_args(static_argnums, static_args, dynamic_args)
             return fun(*args)
 
         def wrapped(*args):
@@ -178,14 +178,14 @@ class MeshShardingHelper(object):
                     _in_shardings = tuple(in_shardings)
                 else:
                     _in_shardings = in_shardings
-                _, dynamic_args = self.split_static_dynamic_args(static_argnums, args)
-                matched_in_shardings = self.match_sharding_rule(_in_shardings, dynamic_args)
+                _, dynamic_args = self._split_static_dynamic_args(static_argnums, args)
+                matched_in_shardings = self._match_sharding_rule(_in_shardings, dynamic_args)
 
             if out_shardings is None:
                 matched_out_shardings = None
             else:
                 output = jax.eval_shape(lambda: fun(*args))
-                matched_out_shardings = self.match_sharding_rule(out_shardings, output)
+                matched_out_shardings = self._match_sharding_rule(out_shardings, output)
 
             jitted_fn = jax.jit(
                 sharding_constrained_fun,
@@ -208,7 +208,7 @@ class MeshShardingHelper(object):
         # Enforce shard constraint with global mesh
         if cls.global_mesh_helper is None:
             return pytree
-        named_shardings = cls.global_mesh_helper.match_sharding_rule(sharding_rule, pytree)
+        named_shardings = cls.global_mesh_helper._match_sharding_rule(sharding_rule, pytree)
         return jax.lax.with_sharding_constraint(pytree, named_shardings)
 
     def make_shard_and_gather_fns(self, pytree, sharding_rule):
@@ -216,7 +216,7 @@ class MeshShardingHelper(object):
             or a pytree of PartitionSpecs. This can be used to shard and gather
             a pytree of tensors.
         """
-        named_shardings = self.match_sharding_rule(sharding_rule, pytree)
+        named_shardings = self._match_sharding_rule(sharding_rule, pytree)
         def make_shard_fn(partition_spec):
             jax_shard_function = jax.jit(
                 lambda x: x,
