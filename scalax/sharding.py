@@ -160,8 +160,8 @@ class MeshShardingHelper(object):
                     _args_sharding_constraint = tuple(args_sharding_constraint)
                 else:
                     _args_sharding_constraint = args_sharding_constraint
-                named_shardings = self._match_sharding_rule(_args_sharding_constraint, args)
                 static_args, dynamic_args = self._split_static_dynamic_args(static_argnums, args)
+                named_shardings = self._match_sharding_rule(_args_sharding_constraint, dynamic_args)
                 dynamic_args = jax.lax.with_sharding_constraint(dynamic_args, named_shardings)
                 args = self._combine_static_dynamic_args(static_argnums, static_args, dynamic_args)
             return fun(*args)
@@ -169,7 +169,9 @@ class MeshShardingHelper(object):
         def wrapped(*args):
             static_args = tuple(args[i] for i in static_argnums) if static_argnums is not None else ()
             if static_args in static_args_jitted_fn_cache:
-                return static_args_jitted_fn_cache[static_args](*args)
+                with self:
+                    results = static_args_jitted_fn_cache[static_args](*args)
+                return results
 
             if in_shardings is None:
                 matched_in_shardings = None
