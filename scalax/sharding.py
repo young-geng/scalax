@@ -188,7 +188,7 @@ class MeshShardingHelper(object):
             else:
                 output = jax.eval_shape(lambda: fun(*args))
                 matched_out_shardings = self._match_sharding_rule(out_shardings, output)
-
+            
             jitted_fn = jax.jit(
                 sharding_constrained_fun,
                 in_shardings=matched_in_shardings,
@@ -233,7 +233,7 @@ class MeshShardingHelper(object):
             jax_gather_fn = jax.jit(
                 lambda x: x,
                 in_shardings=partition_spec,
-                out_shardings=None
+                out_shardings=NamedSharding(self.mesh, PartitionSpec()),
             )
             def gather_fn(tensor):
                 return jax.device_get(jax_gather_fn(tensor))
