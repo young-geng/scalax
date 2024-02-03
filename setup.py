@@ -2,6 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='scalax',
+    author='Xinyang Geng',
     version='0.1.1',
     license='Apache-2.0',
     description='Scaling utilities for JAX.',
