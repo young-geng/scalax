@@ -24,6 +24,16 @@ class FSDPShardingRule(ShardingRule):
     """ Create FSDP sharding PartitionSpec for a pytree. """
 
     def __init__(self, fsdp_axis_name='fsdp', fsdp_axis_size=None, min_fsdp_size=1048576):
+        """ Create an FSDPShardingRule.
+
+        Args:
+            fsdp_axis_name: The name of the FSDP axis.
+            fsdp_axis_size: The mesh axis size for FSDP. This is used to find
+                a suitable axis for FSDP sharding. If None, the largest power of
+                two divisor of the tensor shape will be used.
+            min_fsdp_size: The minimum size of a tensor to be sharded. If the
+                tensor is smaller than this size, it will be replicated.
+        """
         self.fsdp_axis_name = fsdp_axis_name
         self.fsdp_axis_size = fsdp_axis_size
         self.min_fsdp_size = min_fsdp_size
@@ -63,8 +73,19 @@ class FSDPShardingRule(ShardingRule):
 class TreePathShardingRule(ShardingRule):
     """ Create PartitionSpec for a pytree according to a list of regex rules. """
 
-    def __init__(self, *ruless, strict=True):
-        self.rules = ruless
+    def __init__(self, *rules, strict=True):
+        """ Create a TreePathShardingRule according to a list of regex rules.
+
+        Args:
+            rules: A list of pairs of regex rules and PartitionSpecs. The regex
+                rules are used to match the path of the pytree, which is a /
+                separated string of the path from the root of the pytree to the
+                leaf node. The regex must match part of the path for the
+                PartitionSpec to be applied.
+            strict: A boolean, whether to raise an error if no rule is found for
+                a leaf node. If False, a default PartitionSpec() will be used.
+        """
+        self.rules = rules
         self.strict = strict
 
     def apply(self, pytree):
@@ -86,7 +107,17 @@ class MeshShardingHelper(object):
     """ Helper class for creating jit sharding jax functions with sharding rules. """
     global_mesh_helper = None
 
-    def __init__(self, axis_dims, axis_names, mesh_axis_splitting=True):
+    def __init__(self, axis_dims, axis_names, mesh_axis_splitting=False):
+        """ Create a MeshShardingHelper.
+
+        Args:
+            axis_dims: A tuple of integers, the shape of the mesh.
+            axis_names: A tuple of strings, the names of the mesh axes.
+            mesh_axis_splitting: A boolean, whether to allow splitting one physical
+                axis into multiple logical axes.
+        """
+        self.axis_dims = tuple(axis_dims)
+        self.axis_names = tuple(axis_names)
         mesh_shape = np.arange(jax.device_count()).reshape(axis_dims).shape
         if mesh_axis_splitting:
             physical_mesh = np.array(jax.devices()).reshape(mesh_shape)
@@ -120,7 +151,16 @@ class MeshShardingHelper(object):
             args.insert(i, arg)
         return tuple(args)
 
-    def _match_sharding_rule(self, sharding_rules, pytree):
+    def match_sharding_rule(self, sharding_rules, pytree):
+        """ Apply sharding rules to a pytree to get a pytree of PartitionSpecs.
+
+        Args:
+            sharding_rules: The sharding rules or partition specs for the pytree.
+            pytree: The pytree to be sharded.
+
+        Returns:
+            A pytree of PartitionSpecs with the same structure as the input pytree.
+        """
         def get_partition_spec(rule, pytree):
             if isinstance(rule, ShardingRule):
                 return jax.tree_util.tree_map(
@@ -145,13 +185,27 @@ class MeshShardingHelper(object):
             get_partition_spec, sharding_rules, pytree, is_leaf=is_leaf
         )
 
-    def sharded_jit(self,
-                    fun,
-                    in_shardings=None,
-                    out_shardings=None,
-                    static_argnums=None,
-                    args_sharding_constraint=None,
-                    **kwargs):
+    def sjit(self,
+             fun,
+             in_shardings=None,
+             out_shardings=None,
+             static_argnums=None,
+             args_sharding_constraint=None,
+             **kwargs):
+        """ JIT compile a function with sharding rules.
+
+        Args:
+            fun: The function to be JIT compiled.
+            in_shardings: The sharding rule or partition specs for the input of the function.
+            out_shardings: The sharding rule or partition specs for the output of the function.
+            static_argnums: The indices of the static arguments.
+            args_sharding_constraint: The sharding rule or partition specs to constrain
+                the args after the beginning of the function.
+            kwargs: Additional arguments for jax.jit.
+
+        Returns:
+            The JIT compiled function.
+        """
         static_args_jitted_fn_cache = dict()
 
         def sharding_constrained_fun(*args):
@@ -161,7 +215,7 @@ class MeshShardingHelper(object):
                 else:
                     _args_sharding_constraint = args_sharding_constraint
                 static_args, dynamic_args = self._split_static_dynamic_args(static_argnums, args)
-                named_shardings = self._match_sharding_rule(_args_sharding_constraint, dynamic_args)
+                named_shardings = self.match_sharding_rule(_args_sharding_constraint, dynamic_args)
                 dynamic_args = jax.lax.with_sharding_constraint(dynamic_args, named_shardings)
                 args = self._combine_static_dynamic_args(static_argnums, static_args, dynamic_args)
             return fun(*args)
@@ -181,14 +235,14 @@ class MeshShardingHelper(object):
                 else:
                     _in_shardings = in_shardings
                 _, dynamic_args = self._split_static_dynamic_args(static_argnums, args)
-                matched_in_shardings = self._match_sharding_rule(_in_shardings, dynamic_args)
+                matched_in_shardings = self.match_sharding_rule(_in_shardings, dynamic_args)
 
             if out_shardings is None:
                 matched_out_shardings = None
             else:
                 output = jax.eval_shape(lambda: fun(*args))
-                matched_out_shardings = self._match_sharding_rule(out_shardings, output)
-            
+                matched_out_shardings = self.match_sharding_rule(out_shardings, output)
+
             jitted_fn = jax.jit(
                 sharding_constrained_fun,
                 in_shardings=matched_in_shardings,
@@ -205,20 +259,33 @@ class MeshShardingHelper(object):
 
         return wrapped
 
+    def sharded_jit(self, *args, **kwargs):
+        """ Alias for sjit for backward compatibility. """
+        return self.sjit(*args, **kwargs)
+
     @classmethod
     def with_sharding_constraint(cls, pytree, sharding_rule):
         # Enforce shard constraint with global mesh
         if cls.global_mesh_helper is None:
             return pytree
-        named_shardings = cls.global_mesh_helper._match_sharding_rule(sharding_rule, pytree)
+        named_shardings = cls.global_mesh_helper.match_sharding_rule(sharding_rule, pytree)
         return jax.lax.with_sharding_constraint(pytree, named_shardings)
 
     def make_shard_and_gather_fns(self, pytree, sharding_rule):
-        """ Create pytree of sharding and gathering functions from sharding rule
-            or a pytree of PartitionSpecs. This can be used to shard and gather
-            a pytree of tensors.
         """
-        named_shardings = self._match_sharding_rule(sharding_rule, pytree)
+        Create pytree of sharding and gathering functions from sharding rule
+        or a pytree of PartitionSpecs. This can be used to shard and gather
+        a pytree of tensors.
+
+        Args:
+            pytree: The pytree to be sharded and gathered.
+            sharding_rule: The sharding rule or partition specs for the pytree.
+
+        Returns:
+            A pair of pytrees of sharding and gathering functions, each with the
+            same structure as the input pytree.
+        """
+        named_shardings = self.match_sharding_rule(sharding_rule, pytree)
         def make_shard_fn(partition_spec):
             jax_shard_function = jax.jit(
                 lambda x: x,
@@ -245,4 +312,58 @@ class MeshShardingHelper(object):
 
     @classmethod
     def apply_shard_and_gather_fns(cls, fns, pytree):
+        """ Apply pytree of sharding and gathering functions to a pytree.
+
+        Args:
+            fns: The pytree of sharding or gathering functions.
+            pytree: The pytree to be sharded or gathered.
+
+        Returns:
+            The sharded or gathered pytree with the same structure as the input pytree.
+        """
         return jax.tree_util.tree_map(lambda fn, x: fn(x), fns, pytree)
+
+    def local_data_to_global_array(self, pytree, batch_axis=0, mesh_axis_subset=None):
+        """ Convert local data to a global array with sharding.
+
+        Args:
+            pytree: The local data pytree.
+            batch_axis: The batch axis to shard the data.
+            mesh_axis_subset: The subset of mesh axes to use for sharding.
+
+        Returns:
+            The sharded pytree of global arrays with the same structure as the input pytree.
+        """
+        if mesh_axis_subset is None:
+            mesh_axis_subset = self.axis_names
+        else:
+            if isinstance(mesh_axis_subset, str):
+                mesh_axis_subset = (mesh_axis_subset,)
+            for name in mesh_axis_subset:
+                assert name in self.axis_names, f'Axis name {name} not found in mesh axis names'
+            mesh_axis_subset = tuple(mesh_axis_subset)
+
+        sharding = NamedSharding(
+            self.mesh,
+            PartitionSpec(*[None for _ in range(batch_axis - 1)], mesh_axis_subset)
+        )
+
+        local_devices = jax.local_devices()
+        local_device_count = len(local_devices)
+        process_count = jax.process_count()
+
+        def to_global_array(array):
+            if isinstance(array, jax.Array):
+                # Already a device array, we can use jnp to split it
+                splits = jnp.split(array, local_device_count, axis=batch_axis)
+            else:
+                splits = np.split(array, local_device_count, axis=batch_axis)
+            local_arrays = jax.device_put(splits, local_devices)
+            return jax.make_array_from_single_device_arrays(
+                shape=(process_count * array.shape[0], *array.shape[1:]),
+                sharding=sharding,
+                arrays=local_arrays
+            )
+
+        return jax.tree_util.tree_map(to_global_array, pytree)
+
