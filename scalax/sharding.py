@@ -359,8 +359,10 @@ class MeshShardingHelper(object):
             else:
                 splits = np.split(array, local_device_count, axis=batch_axis)
             local_arrays = jax.device_put(splits, local_devices)
+            output_shape = list(array.shape)
+            output_shape[batch_axis] = output_shape[batch_axis] * process_count
             return jax.make_array_from_single_device_arrays(
-                shape=(process_count * array.shape[0], *array.shape[1:]),
+                shape=output_shape,
                 sharding=sharding,
                 arrays=local_arrays
             )
