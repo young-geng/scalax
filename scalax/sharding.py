@@ -103,6 +103,25 @@ class TreePathShardingRule(ShardingRule):
         return named_tree_map(get_partition_spec, pytree, sep='/')
 
 
+class PolicyShardingRule(ShardingRule):
+    """ Create PartitionSpec for a pytree with a callable policy. """
+
+    def __init__(self, policy):
+        """ Create a PolicyShardingRule with a callable policy.
+
+        Args:
+            policy: A callable that takes a tree path and a leaf tensor as input
+                and returns a PartitionSpec.
+        """
+        self.policy = policy
+
+    def apply(self, pytree):
+        """ Returns a pytree of PartitionSpec according to the policy. """
+        def get_partition_spec(name, leaf):
+            return self.policy(name, leaf)
+        return named_tree_map(get_partition_spec, pytree, sep='/')
+
+
 class MeshShardingHelper(object):
     """ Helper class for creating jit sharding jax functions with sharding rules. """
     global_mesh_helper = None

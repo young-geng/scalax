@@ -106,3 +106,10 @@ def named_tree_map(f, tree, *rest, is_leaf=None, sep=None):
         is_leaf=is_leaf
     )
 
+
+def print_pytree_structure(tree, sep='/', is_leaf=None):
+    def print_fn(path, val):
+        shape = f'shape: {val.shape if hasattr(val, "shape") else "none"}'
+        dtype = f'dtype: {val.dtype if hasattr(val, "dtype") else "none"}'
+        print(f'{path}: {shape}, {dtype}')
+    named_tree_map(print_fn, tree, is_leaf=is_leaf, sep=sep)
