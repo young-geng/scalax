@@ -143,8 +143,11 @@ class MeshShardingHelper(object):
             physical_mesh = np.array(jax.devices()).reshape(mesh_shape)
         else:
             physical_mesh = mesh_utils.create_device_mesh(mesh_shape)
-        self.mesh = Mesh(physical_mesh, axis_names)
-        self.previous_global_meshes = []
+        self._mesh = Mesh(physical_mesh, axis_names)
+
+    @property
+    def mesh(self):
+        return self._mesh
 
     def get_context(self, **kwargs):
         return MeshShardingContext(
