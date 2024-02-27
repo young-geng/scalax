@@ -249,6 +249,50 @@ class MeshShardingHelperTest(parameterized.TestCase):
         self.assertEqual(sjit_rule_output.sharding, reference_output.sharding)
         self.assertEqual(sjit_spec_output.sharding, reference_output.sharding)
 
+    @parameterized.parameters(32, 64, 192)
+    def test_local_data_to_global_array(self, dim):
+        mesh = MeshShardingHelper(
+            axis_dims=(2, 4),
+            axis_names=('x', 'y'),
+        )
+
+        data = np.ones((dim, dim))
+        global_array_x = mesh.local_data_to_global_array(
+            data, mesh_axis_subset=('x',)
+        )
+        global_array_y = mesh.local_data_to_global_array(
+            data, mesh_axis_subset=('y',)
+        )
+        global_array_xy = mesh.local_data_to_global_array(
+            data, mesh_axis_subset=('x', 'y')
+        )
+
+        self.assertEqual(global_array_x.shape, data.shape)
+        self.assertEqual(global_array_y.shape, data.shape)
+        self.assertEqual(global_array_xy.shape, data.shape)
+
+        self.assertEqual(global_array_x.sharding, NamedSharding(mesh.mesh, PS('x')))
+        self.assertEqual(global_array_y.sharding, NamedSharding(mesh.mesh, PS('y')))
+        self.assertEqual(global_array_xy.sharding, NamedSharding(mesh.mesh, PS(('x', 'y'))))
+
+        global_array_x = mesh.local_data_to_global_array(
+            data, batch_axis=1, mesh_axis_subset=('x',)
+        )
+        global_array_y = mesh.local_data_to_global_array(
+            data, batch_axis=1, mesh_axis_subset=('y',)
+        )
+        global_array_xy = mesh.local_data_to_global_array(
+            data, batch_axis=1, mesh_axis_subset=('x', 'y')
+        )
+
+        self.assertEqual(global_array_x.shape, data.shape)
+        self.assertEqual(global_array_y.shape, data.shape)
+        self.assertEqual(global_array_xy.shape, data.shape)
+
+        self.assertEqual(global_array_x.sharding, NamedSharding(mesh.mesh, PS(None, 'x')))
+        self.assertEqual(global_array_y.sharding, NamedSharding(mesh.mesh, PS(None, 'y')))
+        self.assertEqual(global_array_xy.sharding, NamedSharding(mesh.mesh, PS(None, ('x', 'y'))))
+
 
 if __name__ == '__main__':
-  absltest.main()
+    absltest.main()

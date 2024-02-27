@@ -388,9 +388,13 @@ class MeshShardingHelper(object):
                 assert name in self.axis_names, f'Axis name {name} not found in mesh axis names'
             mesh_axis_subset = tuple(mesh_axis_subset)
 
-        sharding = NamedSharding(
+        in_sharding = NamedSharding(
             self.mesh,
-            PartitionSpec(*[None for _ in range(batch_axis - 1)], mesh_axis_subset)
+            PartitionSpec(*[None for _ in range(batch_axis)], self.axis_names)
+        )
+        out_sharding = NamedSharding(
+            self.mesh,
+            PartitionSpec(*[None for _ in range(batch_axis)], mesh_axis_subset)
         )
 
         local_devices = jax.local_devices()
@@ -406,11 +410,12 @@ class MeshShardingHelper(object):
             local_arrays = jax.device_put(splits, local_devices)
             output_shape = list(array.shape)
             output_shape[batch_axis] = output_shape[batch_axis] * process_count
-            return jax.make_array_from_single_device_arrays(
+            sharded_array = jax.make_array_from_single_device_arrays(
                 shape=output_shape,
-                sharding=sharding,
+                sharding=in_sharding,
                 arrays=local_arrays
             )
+            return jax.device_put(sharded_array, out_sharding)
 
         return jax.tree_util.tree_map(to_global_array, pytree)
 
