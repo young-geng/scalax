@@ -220,7 +220,7 @@ class MeshShardingHelperTest(parameterized.TestCase):
 
         @partial(
             mesh.sjit,
-            sharding_annotation_rules={'activation': sharding_rule}
+            annotation_shardings={'activation': sharding_rule}
         )
         def rule_constrained_fn(x):
             return MeshShardingHelper.with_sharding_annotation(
@@ -229,7 +229,7 @@ class MeshShardingHelperTest(parameterized.TestCase):
 
         @partial(
             mesh.sjit,
-            sharding_annotation_rules={'activation': PS('x', 'y')}
+            annotation_shardings={'activation': PS('x', 'y')}
         )
         def spec_constrained_fn(x):
             return MeshShardingHelper.with_sharding_annotation(

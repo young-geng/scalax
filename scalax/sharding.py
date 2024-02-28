@@ -150,6 +150,7 @@ class MeshShardingHelper(object):
         return self._mesh
 
     def get_context(self, **kwargs):
+        """ Get a context manager for the current MeshShardingHelper."""
         return MeshShardingContext(
             mesh_helper=self,
             **kwargs
@@ -157,17 +158,23 @@ class MeshShardingHelper(object):
 
     @classmethod
     def get_global_mesh(cls):
+        """ Get the current global MeshShardingHelper. The global MeshShardingHelper
+            is set by the context manager returned by get_context.
+        """
         context = MeshShardingContext.get_global_context()
         if context is None:
             return None
         return context.mesh_helper
 
     @classmethod
-    def get_global_sharding_annotation_rules(cls):
+    def get_global_annotation_shardings(cls):
+        """ Get the current global annotation shardings via the global MeshShardingHelper
+            context.
+        """
         context = MeshShardingContext.get_global_context()
         if context is None:
             return None
-        return context.sharding_annotation_rules
+        return context.annotation_shardings
 
     def _split_static_dynamic_args(self, static_argnums, args):
         if static_argnums is None:
@@ -224,7 +231,7 @@ class MeshShardingHelper(object):
              out_shardings=None,
              static_argnums=None,
              args_sharding_constraint=None,
-             sharding_annotation_rules=None,
+             annotation_shardings=None,
              **kwargs):
         """ JIT compile a function with sharding rules.
 
@@ -235,7 +242,7 @@ class MeshShardingHelper(object):
             static_argnums: The indices of the static arguments.
             args_sharding_constraint: The sharding rule or partition specs to constrain
                 the args after the beginning of the function.
-            sharding_annotation_rules: A dictionary of sharding annotation rules, which
+            annotation_shardings: A dictionary of sharding annotation rules, which
                 maps the name of the sharding annotation to a sharding rule or partition specs.
             kwargs: Additional arguments for jax.jit.
 
@@ -259,7 +266,7 @@ class MeshShardingHelper(object):
         def wrapped(*args):
             static_args = tuple(args[i] for i in static_argnums) if static_argnums is not None else ()
             if static_args in static_args_jitted_fn_cache:
-                with self.get_context(sharding_annotation_rules=sharding_annotation_rules):
+                with self.get_context(annotation_shardings=annotation_shardings):
                     results = static_args_jitted_fn_cache[static_args](*args)
                 return results
 
@@ -289,7 +296,7 @@ class MeshShardingHelper(object):
 
             static_args_jitted_fn_cache[static_args] = jitted_fn
 
-            with self.get_context(sharding_annotation_rules=sharding_annotation_rules):
+            with self.get_context(annotation_shardings=annotation_shardings):
                 results = jitted_fn(*args)
             return results
 
@@ -301,7 +308,16 @@ class MeshShardingHelper(object):
 
     @classmethod
     def with_sharding_constraint(cls, pytree, sharding_rule):
-        # Enforce shard constraint with global mesh
+        """ Apply sharding constraint to a pytree via the global mesh. The
+            global mesh is implicitly set by the sjit call.
+
+        Args:
+            pytree: The pytree to be sharded.
+            sharding_rule: The sharding rule or partition specs for the pytree.
+
+        Returns:
+            The sharded pytree with the same structure as the input pytree.
+        """
         if cls.get_global_mesh() is None:
             return pytree
         named_shardings = cls.get_global_mesh().match_sharding_rule(
@@ -311,7 +327,17 @@ class MeshShardingHelper(object):
 
     @classmethod
     def with_sharding_annotation(cls, pytree, sharding_name):
-        rules = cls.get_global_sharding_annotation_rules()
+        """ Apply sharding annotation to a pytree via the global annotation shardings.
+            The global annotation shardings is implicitly set by the sjit call.
+
+        Args:
+            pytree: The pytree to be sharded.
+            sharding_name: The name of the sharding annotation.
+
+        Returns:
+            The sharded pytree with the same structure as the input pytree.
+        """
+        rules = cls.get_global_annotation_shardings()
         if rules is None or sharding_name not in rules:
             return pytree
         return cls.with_sharding_constraint(pytree, rules[sharding_name])
@@ -424,7 +450,7 @@ class MeshShardingHelper(object):
 class MeshShardingContext(object):
     """ Context and context manager for MeshShardingHelper. """
     mesh_helper: MeshShardingHelper
-    sharding_annotation_rules: Optional[Mapping[str, Union[ShardingRule, PartitionSpec]]] = None
+    annotation_shardings: Optional[Mapping[str, Union[ShardingRule, PartitionSpec]]] = None
     global_contexts: ClassVar[List] = []
 
     def __enter__(self):
