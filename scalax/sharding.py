@@ -465,3 +465,24 @@ class MeshShardingContext(object):
         if len(cls.global_contexts) == 0:
             return None
         return cls.global_contexts[-1]
+
+
+
+def get_global_mesh():
+    """ Alias for MeshShardingHelper.get_global_mesh """
+    return MeshShardingHelper.get_global_mesh()
+
+
+def get_global_annotation_shardings():
+    """ Alias for MeshShardingHelper.get_global_annotation_shardings """
+    return MeshShardingHelper.get_global_annotation_shardings()
+
+
+def with_sharding_constraint(*args, **kwargs):
+    """ Alias for MeshShardingHelper.with_sharding_constraint """
+    return MeshShardingHelper.with_sharding_constraint(*args, **kwargs)
+
+
+def with_sharding_annotation(*args, **kwargs):
+    """ Alias for MeshShardingHelper.with_sharding_constraint """
+    return MeshShardingHelper.with_sharding_annotation(*args, **kwargs)

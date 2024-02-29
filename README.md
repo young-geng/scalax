@@ -19,9 +19,9 @@ pip install scalax
 ```
 
 ## Quickstart
-Suppose we have a simple flax model and train step function that looks like this:
-```python
+Suppose we have a simple flax model and train step function:
 
+```python
 class Model(nn.Module):
     ...
 
@@ -43,42 +43,45 @@ def train_step(train_state, batch):
 
 This works fine for a single GPU/TPU, but if we want to scale up to multiple
 GPU/TPUs, we need to partition the data or the model in order to parallelize
-the training across devices. This is where scalax comes in. We can first create
-a device mesh and then replace the `jax.jit` decorator with `mesh.sjit`.
-To use different parallelization strategies, we can provide different sharding
-rules to the `sjit` function. For example, to change the previous example
-into a data parallel training, we can do the following:
+the training across devices. Fortunately, JAX JIT already provides a way to
+handle these partitions with [sharding annotations](https://jax.readthedocs.io/en/latest/notebooks/Distributed_arrays_and_automatic_parallelization.html).
+For example, if we have sharding annotations for the `train_state` and `batch`
+pytree, we can simply JIT compile the train_step function with these sharding
+annotations:
 
 ```python
-from functools import partial
-from scalax.sharding import MeshShardingHelper, PartitionSpec
-
-
-mesh = MeshShardingHelper([-1], ['dp'])  # Create a 1D mesh with data parallelism axis
 @partial(
-    mesh.sjit,
-    in_shardings=None,
-    out_shardings=None,
-    # constraint the batch argument to be sharded along the dp axis to enable data parallelism
-    args_sharding_constraint=(PartitionSpec(), PartitionSpec('dp')),
+    jax.jit,
+    in_shardings=(train_state_shardings, batch_sharding),  # Shard the train_state
+    out_shardings=(train_state_shardings, None),
 )
 def train_step(train_state, batch):
     ...
     return updated_train_state, metrics
-
 ```
+The `train_state_shardings` and `batch_sharding` are pytrees having the same
+structure as the `train_state` and `batch` pytrees, but with `jax.sharding.Sharding`
+objects at the leaf nodes. These sharding objects are tied to the physical device
+mesh and are often difficult to construct, especially for complex models and
+training code. This is where scalax comes in. Scalax provides a set of utilities
+to help the users automatically obtain the sharding annotations, without having
+to worry about the underlying pytree structure. Scalax handles this by abstracting
+away the concrete sharding objects and using a `ShardingRule` object instead. A
+`ShardingRule` object can generate the sharding annotations for any given pytree
+according to its internal rules.
 
-In this example, the model weights are replicated across all devices, and the
-data batch is sharded across the dp axis. This works well if the model fits into
-a single device. If the model is too large to fit into a single device, we can
-use fully sharded data parallelism to also partition the model across devices:
+
+For example, scalax provides a `FSDPShardingRule` object, which can automatically
+generate sharding annotations for a pytree according to the Fully Sharded Data
+Parallelism (FSDP) strategy. To apply it to our `train_step` function, we can
+simply replace the `jax.jit` decorator:
 
 ```python
 from functools import partial
 from scalax.sharding import MeshShardingHelper, PartitionSpec, FSDPShardingRule
 
 
-mesh = MeshShardingHelper([-1], ['fsdp'])  # Create a 1D mesh with data parallelism axis
+mesh = MeshShardingHelper([-1], ['fsdp'])  # Create a 1D mesh with fsdp axis
 @partial(
     mesh.sjit,
     in_shardings=(FSDPShardingRule(), None),   # Shard the train_state using FSDP
@@ -88,10 +91,83 @@ mesh = MeshShardingHelper([-1], ['fsdp'])  # Create a 1D mesh with data parallel
 def train_step(train_state, batch):
     ...
     return updated_train_state, metrics
-
 ```
 
-As we can see in the previous example, scalax allows user to shard the model
-and training without having to change the model or training code. This makes it
-easy to integrate scalax into existing JAX codebases.
+In the previous example, we see that scalax provides a `MeshShardingHelper` object
+using a 1D device mesh with a fsdp axis. We then use the `sjit` method to compile
+the `train_step` function with the FSDP sharding rules, without having to worry
+about the specific underlying pytree structure of the `train_state`. Beyond
+FSDP, scalax also provides `TreePathShardingRule` and `PolicyShardingRule`, which
+allows users to easily combine different sharding strategies such as replicated
+data parallelism, FSDP, tensor parallelism and sequence parallelism to best fit
+their model and training setup. All of these can be done with minimal changes to
+the original model and training code.  This makes it easy to integrate scalax
+into existing JAX codebases.
 
+
+### Sharding Intermediate Tensors
+In previous example, we see that scalax `sjit` can help us easily shard the
+input and output of a jitted function. In many cases, this would be sufficient
+to scale up the training, as the intermdiate tensors are automatically sharded
+by XLA. However, in some cases, XLA might not be able to derive the optimal
+sharding for the intermediate tensors, and we might want to manually specify
+the sharding for these tensors. Similar to JAX, scalax  provides a
+`with_sharding_constraint` function to manually specify the sharding.
+Similar to `sjit`, `with_sharding_constraint` takes both `ShardingRule` and
+`PartitionSpec` objects.
+
+```python
+from scalax.sharding import MeshShardingHelper, PartitionSpec, FSDPShardingRule
+from scalax.sharding import with_sharding_constraint
+
+mesh = MeshShardingHelper([-1], ['fsdp'])  # Create a 1D mesh with fsdp axis
+@partial(
+    mesh.sjit,
+    in_shardings=(FSDPShardingRule(), None),   # Shard the train_state using FSDP
+    out_shardings=(FSDPShardingRule(), None),
+    args_sharding_constraint=(FSDPShardingRule(), PartitionSpec('fsdp')),
+)
+def train_step(train_state, batch):
+    ...
+    intermediate_pytree = ...
+    intermediate_pytree = with_sharding_constraint(
+        intermediate_pytree, FSDPShardingRule(),
+    )
+    ...
+    return updated_train_state, metrics
+```
+
+In previous example, we apply the `FSDPShardingRule` to the `intermediate_pytree`.
+However, this way of sharding intermediate tensors is intrusive to the original
+training code. To make it easier to shard intermediate tensors, scalax provides
+a `with_sharding_annotation` function, which only register a name for the sharding
+within the training code without tieing it to a concate sharding rule. This allows
+the same model and training code to be sharded differently without changing the
+code. For example:
+
+```python
+from scalax.sharding import MeshShardingHelper, PartitionSpec, FSDPShardingRule
+from scalax.sharding import with_sharding_annotation
+
+mesh = MeshShardingHelper([-1], ['fsdp'])  # Create a 1D mesh with fsdp axis
+@partial(
+    mesh.sjit,
+    in_shardings=(FSDPShardingRule(), None),   # Shard the train_state using FSDP
+    out_shardings=(FSDPShardingRule(), None),
+    args_sharding_constraint=(FSDPShardingRule(), PartitionSpec('fsdp')),
+    annotation_shardings={
+        'weights': FSDPShardingRule(),
+        'activations': PartitionSpec('fsdp'),
+    }
+)
+def train_step(train_state, batch):
+    ...
+    weights_pytree = with_sharding_annotation(
+        weights_pytree, 'weights',
+    )
+    activations = with_sharding_annotation(
+        activations, 'activations',
+    )
+    ...
+    return updated_train_state, metrics
+```
