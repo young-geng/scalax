@@ -12,7 +12,7 @@ from absl.testing import absltest, parameterized
 
 from scalax.sharding import (
     FSDPShardingRule, TreePathShardingRule, PolicyShardingRule,
-    MeshShardingHelper
+    MeshShardingHelper, with_sharding_annotation, with_sharding_constraint
 )
 
 
@@ -187,13 +187,13 @@ class MeshShardingHelperTest(parameterized.TestCase):
 
         @mesh.sjit
         def rule_constrained_fn(x):
-            return MeshShardingHelper.with_sharding_constraint(
+            return with_sharding_constraint(
                 x, PolicyShardingRule(lambda path, value: PS('x', 'y'))
             )
 
         @mesh.sjit
         def spec_constrained_fn(x):
-            return MeshShardingHelper.with_sharding_constraint(
+            return with_sharding_constraint(
                 x, PS('x', 'y')
             )
 
@@ -223,7 +223,7 @@ class MeshShardingHelperTest(parameterized.TestCase):
             annotation_shardings={'activation': sharding_rule}
         )
         def rule_constrained_fn(x):
-            return MeshShardingHelper.with_sharding_annotation(
+            return with_sharding_annotation(
                 x, 'activation'
             )
 
@@ -232,7 +232,7 @@ class MeshShardingHelperTest(parameterized.TestCase):
             annotation_shardings={'activation': PS('x', 'y')}
         )
         def spec_constrained_fn(x):
-            return MeshShardingHelper.with_sharding_annotation(
+            return with_sharding_annotation(
                 x, 'activation'
             )
 
