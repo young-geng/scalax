@@ -42,6 +42,11 @@ Parameters
    means that the sharding is inferred by XLA.
 - `static_argnums`: A tuple of integers representing the argument indices that
   should be treated as static arguments.
+- `args_sharding_constraint`: A tuple of `ShardingRule`, `PartitionSpecs` objects
+  or `None` representing the sharding constraints for the arguments after the
+  function begines. This is useful if we want to input data into the function
+  in one sharding, and then reshard it inside the function. `None` means that
+  the sharding is inferred by XLA.
 - `annotation_shardings`: A dictionary mapping annotation names to `ShardingRule`
   or `PartitionSpecs` objects. This is used to specify the shardings for
   annotations specificied using `scalax.sharding.with_sharding_annotation`.
