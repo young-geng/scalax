@@ -18,6 +18,11 @@ Scalax is available on PyPI and can be installed using pip:
 pip install scalax
 ```
 
+
+## Documentations
+More details about scalax can be found in the [documentation page](docs/).
+
+
 ## Quickstart
 Suppose we have a simple flax model and train step function:
 
@@ -103,6 +108,15 @@ data parallelism, FSDP, tensor parallelism and sequence parallelism to best fit
 their model and training setup. All of these can be done with minimal changes to
 the original model and training code.  This makes it easy to integrate scalax
 into existing JAX codebases.
+
+
+Scalax currently supports the following sharding rules:
+- `FSDPShardingRule`: A sharding rule for automatically selecting an axis for
+  Fully Sharded Data Parallelism (FSDP).
+- `TreePathShardingRule`: A regular expression sharding rule for sharding a pytree
+    according to the path of its leaves.
+- `PolicyShardingRule`: A sharding rule which determins the sharding according to
+    a user defined callable policy.
 
 
 ### Sharding Intermediate Tensors
