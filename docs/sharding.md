@@ -9,7 +9,7 @@ shardings of computation.
 
 ## Class `MeshShardingHelper`
 `MeshShardingHelper` is the main object for managing device mesh and sharding.
-It mangages the devie mesh and provides a convenient interface to JAX's JIT
+It mangages the device mesh and provides a convenient interface to JAX's JIT
 compiler.
 
 ### Constructor
