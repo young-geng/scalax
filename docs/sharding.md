@@ -112,3 +112,74 @@ Paramters
 Returns
 - The sharded pytree, with the same structure as the input pytree.
 
+
+
+## Class `ShardingRule`
+`ShardingRule` is a base class for sharding rules. It provides a `apply` method
+to apply the sharding rule to a pytree.
+
+
+## Class `FSDPShardingRule`
+`FSDPShardingRule` is a sharding rule for Fully Sharded Data Parallelism (FSDP).
+It analyzes the shape of the tensors in the pytree and finds a suitable axis for
+FSDP sharding.
+
+### Constructor
+- `fsdp_axis_name`: The name of the FSDP axis
+- `fsdp_axis_size`: The size of the FSDP axis. `FSDPShardingRule` will find an
+  axis of a tensor which can be divided by `fsdp_axis_size` and use that as the
+  FSDP axis. If it is None, `FSDPShardingRule` will find the axis that has the
+  largest power of 2 divisor and use that as the FSDP axis.
+- `min_fsdp_size`: The minimum size of tensors to be sharded. If the size of a
+  tensor is smaller than `min_fsdp_size`, it will not be sharded.
+### Method `apply`
+Applies FSDP sharding rule to a the pytree.
+
+Parameters
+- `pytree`: The pytree to be sharded.
+
+Returns
+- A pytree of `NamedSharding` objects, which has the same structure as the input pytree.
+
+
+## Class `TreePathShardingRule`
+`TreePathShardingRule` is a sharding rule for sharding a pytree using the tree
+path of its leaves. It is a flexible sharding rule that allows the user to specify a combination of different shardings.
+
+### Constructor
+- `*rules`: regex sharding rules to be applied to the leaves of the pytree. Each
+  sharding rule should be a pair of a regex pattern and a `PartitionSpec`
+  object. `TreePathShardingRule` will iterate through the rules in order and apply
+  the `PartitionSpec` with the matching pattern.
+- `strict`: Default to `True`. If `True`, `TreePathShardingRule` will raise an
+  error if there is a leaf in the pytree that does not match any of the patterns.
+  If `False`, `TreePathShardingRule` will simply provide a replicated `PartitionSpec`
+  for the unmatched leaf.
+
+### Method `apply`
+Applies the sharding rule to the pytree.
+
+Parameters
+- `pytree`: The pytree to be sharded.
+
+Returns
+- A pytree of `NamedSharding` objects, which has the same structure as the input pytree.
+
+
+
+## Class `PolicyShardingRule`
+`PolicyShardingRule` is a sharding rule for sharding a pytree using a user-defined
+policy function.
+
+### Constructor
+- `policy`: The policy function to be used for sharding. The policy function
+  should take the pytree path and the leaf tensor and return a `PartitionSpec` object.
+
+### Method `apply`
+Applies the sharding rule to the pytree.
+
+Parameters
+- `pytree`: The pytree to be sharded.
+
+Returns
+- A pytree of `NamedSharding` objects, which has the same structure as the input pytree.
