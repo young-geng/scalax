@@ -23,6 +23,17 @@ pip install scalax
 More details about scalax can be found in the [documentation page](docs/).
 
 
+## Discord Server
+We are running an unofficial Discord community (unaffiliated with Google) for discussion related to training large models in JAX. [Follow this link to join the Discord server](https://discord.gg/Rf4drG3Bhp). We have dedicated channel for scalax.
+
+
+## Examples
+We provide a set of well annotated examples in the [examples directory](/examples/). The most notable ones include:
+- [MLP with Data Parallelism](/examples/mnist_data_parallel.ipynb)
+- [LLaMA with fully sharded data parallelism](/examples/llama_fsdp.ipynb)
+- [LLaMA with combined fully sharded data parallelism and tensor parallelism](/examples/llama_fsdp_tp.ipynb)
+
+
 ## Quickstart
 Suppose we have a simple flax model and train step function:
 

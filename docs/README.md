@@ -18,12 +18,14 @@ Scalax is available on PyPI and can be installed using pip:
 pip install scalax
 ```
 
+
 ## Module in Scalax
 - [Sharding](sharding.md)
 - Utils
 
+
 ## Examples
-We provide a set of examples in the [examples directory](/examples/). The most notable ones include:
+We provide a set of well annotated examples in the [examples directory](/examples/). The most notable ones include:
 - [MLP with Data Parallelism](/examples/mnist_data_parallel.ipynb)
 - [LLaMA with fully sharded data parallelism](/examples/llama_fsdp.ipynb)
 - [LLaMA with combined fully sharded data parallelism and tensor parallelism](/examples/llama_fsdp_tp.ipynb)
