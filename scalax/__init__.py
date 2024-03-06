@@ -1,1 +1,1 @@
-from scalax import attention, sharding, utils
+from scalax import sharding, utils
