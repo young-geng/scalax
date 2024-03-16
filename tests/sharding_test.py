@@ -139,6 +139,37 @@ class PolicyShardingRuleTest(parameterized.TestCase):
 class MeshShardingHelperTest(parameterized.TestCase):
 
     @parameterized.parameters(32, 64, 192)
+    def test_sjit_static_args(self, dim):
+        mesh = MeshShardingHelper(
+            axis_dims=(2, 4),
+            axis_names=('x', 'y'),
+        )
+
+        def static_arg_fn():
+            return 3.0
+
+        @partial(
+            mesh.sjit,
+            in_shardings=(PS(), PS()),
+            static_argnums=(1,),
+        )
+        def sharded_fn(x, y, z):
+            return jnp.zeros((dim, dim)) + x + z + static_arg_fn()
+
+        output = sharded_fn(1.0, static_arg_fn, 2.0)
+        self.assertTrue(jnp.all(output == 6.0))
+
+        @partial(
+            mesh.sjit,
+            in_shardings=(PS(), PS(), PS()),
+        )
+        def sharded_fn(x, y, z):
+            return jnp.zeros((dim, dim)) + x + z + static_arg_fn()
+
+        with self.assertRaises(TypeError):
+            output = sharded_fn(1.0, static_arg_fn, 2.0)
+
+    @parameterized.parameters(32, 64, 192)
     def test_sjit_out_shardings(self, dim):
         mesh = MeshShardingHelper(
             axis_dims=(2, 4),

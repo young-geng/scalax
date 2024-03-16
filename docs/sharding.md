@@ -41,7 +41,8 @@ Parameters
    representing the sharding annotations for the output of the function. `None`
    means that the sharding is inferred by XLA.
 - `static_argnums`: A tuple of integers representing the argument indices that
-  should be treated as static arguments.
+  should be treated as static arguments. Note that static arguments are excluded
+  from `in_shardings` and `args_sharding_constraint`.
 - `args_sharding_constraint`: A tuple of `ShardingRule`, `PartitionSpecs` objects
   or `None` representing the sharding constraints for the arguments after the
   function begines. This is useful if we want to input data into the function
