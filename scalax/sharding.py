@@ -307,9 +307,9 @@ class MeshShardingHelper(object):
 
         return SJITCompiledFunction(
             mesh=self,
-            static_args_jitted_fn_cache=static_args_jitted_fn_cache,
             call_fn=call_fn,
             lower_fn=lower_fn,
+            jit_fn_by_static_args_fn=jit_fn_by_static_args,
         )
 
     @classmethod
@@ -456,15 +456,18 @@ class MeshShardingHelper(object):
 class SJITCompiledFunction(object):
     """ SJIT compiled function with extra attribute for easy access. """
     mesh: MeshShardingHelper
-    static_args_jitted_fn_cache: dict[tuple, Callable]
     call_fn: Callable
     lower_fn: Callable
+    jit_fn_by_static_args_fn: Callable
 
     def __call__(self, *args, **kwargs):
         return self.call_fn(*args, **kwargs)
 
     def lower(self, *args, **kwargs):
         return self.lower_fn(*args, **kwargs)
+
+    def get_jitted_function_by_args(self, *args, **kwargs):
+        return self.jit_fn_by_static_args_fn(*args, **kwargs)
 
 
 @dataclass
