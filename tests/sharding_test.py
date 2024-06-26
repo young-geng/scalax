@@ -1,5 +1,6 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
+os.environ['JAX_PLATFORMS'] = 'cpu'
 os.environ['XLA_FLAGS'] = '--xla_force_host_platform_device_count=8'
 
 from functools import partial

@@ -2,7 +2,7 @@ from functools import partial
 import re
 import abc
 from dataclasses import dataclass
-from typing import Optional, Mapping, Union, ClassVar, List
+from typing import Optional, Mapping, Union, ClassVar, List, Callable
 import numpy as np
 
 import jax
@@ -263,12 +263,10 @@ class MeshShardingHelper(object):
                 args = self._combine_static_dynamic_args(static_argnums, static_args, dynamic_args)
             return fun(*args)
 
-        def wrapped(*args):
+        def jit_fn_by_static_args(*args):
             static_args = tuple(args[i] for i in static_argnums) if static_argnums is not None else ()
             if static_args in static_args_jitted_fn_cache:
-                with self.get_context(annotation_shardings=annotation_shardings):
-                    results = static_args_jitted_fn_cache[static_args](*args)
-                return results
+                return static_args_jitted_fn_cache[static_args]
 
             if in_shardings is None:
                 matched_in_shardings = None
@@ -295,16 +293,24 @@ class MeshShardingHelper(object):
             )
 
             static_args_jitted_fn_cache[static_args] = jitted_fn
+            return static_args_jitted_fn_cache[static_args]
 
+        def call_fn(*args):
+            jitted_fn = jit_fn_by_static_args(*args)
             with self.get_context(annotation_shardings=annotation_shardings):
-                results = jitted_fn(*args)
-            return results
+                return jitted_fn(*args)
 
-        return wrapped
+        def lower_fn(*args):
+            jitted_fn = jit_fn_by_static_args(*args)
+            with self.get_context(annotation_shardings=annotation_shardings):
+                return jitted_fn.lower(*args)
 
-    def sharded_jit(self, *args, **kwargs):
-        """ Alias for sjit for backward compatibility. """
-        return self.sjit(*args, **kwargs)
+        return SJITCompiledFunction(
+            mesh=self,
+            static_args_jitted_fn_cache=static_args_jitted_fn_cache,
+            call_fn=call_fn,
+            lower_fn=lower_fn,
+        )
 
     @classmethod
     def with_sharding_constraint(cls, pytree, sharding_rule):
@@ -444,6 +450,21 @@ class MeshShardingHelper(object):
             return jax.device_put(sharded_array, out_sharding)
 
         return jax.tree_util.tree_map(to_global_array, pytree)
+
+
+@dataclass
+class SJITCompiledFunction(object):
+    """ SJIT compiled function with extra attribute for easy access. """
+    mesh: MeshShardingHelper
+    static_args_jitted_fn_cache: dict[tuple, Callable]
+    call_fn: Callable
+    lower_fn: Callable
+
+    def __call__(self, *args, **kwargs):
+        return self.call_fn(*args, **kwargs)
+
+    def lower(self, *args, **kwargs):
+        return self.lower_fn(*args, **kwargs)
 
 
 @dataclass
