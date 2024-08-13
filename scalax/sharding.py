@@ -157,7 +157,7 @@ class MeshShardingHelper(object):
         )
 
     @classmethod
-    def get_global_mesh(cls):
+    def get_global_mesh_helper(cls):
         """ Get the current global MeshShardingHelper. The global MeshShardingHelper
             is set by the context manager returned by get_context.
         """
@@ -165,6 +165,13 @@ class MeshShardingHelper(object):
         if context is None:
             return None
         return context.mesh_helper
+
+    @classmethod
+    def get_global_mesh(cls):
+        mesh_helper = cls.get_global_mesh_helper()
+        if mesh_helper is None:
+            return None
+        return mesh_helper.mesh
 
     @classmethod
     def get_global_annotation_shardings(cls):
@@ -281,7 +288,8 @@ class MeshShardingHelper(object):
             if out_shardings is None:
                 matched_out_shardings = None
             else:
-                output = jax.eval_shape(lambda: fun(*args))
+                with self.get_context(annotation_shardings=annotation_shardings):
+                    output = jax.eval_shape(lambda: fun(*args))
                 matched_out_shardings = self.match_sharding_rule(out_shardings, output)
 
             jitted_fn = jax.jit(
@@ -324,9 +332,9 @@ class MeshShardingHelper(object):
         Returns:
             The sharded pytree with the same structure as the input pytree.
         """
-        if cls.get_global_mesh() is None:
+        if cls.get_global_mesh_helper() is None:
             return pytree
-        named_shardings = cls.get_global_mesh().match_sharding_rule(
+        named_shardings = cls.get_global_mesh_helper().match_sharding_rule(
             sharding_rule, pytree
         )
         return jax.lax.with_sharding_constraint(pytree, named_shardings)
@@ -490,6 +498,10 @@ class MeshShardingContext(object):
             return None
         return cls.global_contexts[-1]
 
+
+def get_global_mesh_helper():
+    """ Alias for MeshShardingHelper.get_global_mesh_helper """
+    return MeshShardingHelper.get_global_mesh_helper()
 
 
 def get_global_mesh():

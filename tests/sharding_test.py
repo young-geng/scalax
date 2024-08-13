@@ -13,7 +13,8 @@ from absl.testing import absltest, parameterized
 
 from scalax.sharding import (
     FSDPShardingRule, TreePathShardingRule, PolicyShardingRule,
-    MeshShardingHelper, with_sharding_annotation, with_sharding_constraint
+    MeshShardingHelper, with_sharding_annotation, with_sharding_constraint,
+    get_global_mesh_helper, get_global_mesh
 )
 
 
@@ -207,6 +208,20 @@ class MeshShardingHelperTest(parameterized.TestCase):
             output_ps.sharding,
             NamedSharding(mesh.mesh, PS(('x', 'y')))
         )
+
+    def test_sjit_get_global_mesh(self):
+        mesh = MeshShardingHelper(
+            axis_dims=(2, 4),
+            axis_names=('x', 'y'),
+        )
+
+        @mesh.sjit
+        def sharded_fn(x):
+            self.assertTrue(mesh is get_global_mesh_helper())
+            self.assertTrue(mesh.mesh is get_global_mesh())
+            return x
+
+        sharded_fn(1.0)
 
     @parameterized.parameters(32, 64, 192)
     def test_with_sharding_constraint(self, dim):
