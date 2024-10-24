@@ -139,10 +139,7 @@ class MeshShardingHelper(object):
         self.axis_dims = tuple(axis_dims)
         self.axis_names = tuple(axis_names)
         mesh_shape = np.arange(jax.device_count()).reshape(axis_dims).shape
-        if mesh_axis_splitting:
-            physical_mesh = np.array(jax.devices()).reshape(mesh_shape)
-        else:
-            physical_mesh = mesh_utils.create_device_mesh(mesh_shape)
+        physical_mesh = mesh_utils.create_device_mesh(mesh_shape, allow_split_physical_axes=mesh_axis_splitting)
         self._mesh = Mesh(physical_mesh, axis_names)
 
     @property
