@@ -156,7 +156,7 @@ class MeshShardingHelperTest(parameterized.TestCase):
             static_argnums=(1,),
         )
         def sharded_fn(x, y, z):
-            return jnp.zeros((dim, dim)) + x + z + static_arg_fn()
+            return jnp.zeros((dim, dim)) + x + z + y()
 
         output = sharded_fn(1.0, static_arg_fn, 2.0)
         self.assertTrue(jnp.all(output == 6.0))
