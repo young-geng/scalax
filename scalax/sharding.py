@@ -457,7 +457,7 @@ class MeshShardingHelper(object):
         return jax.tree_util.tree_map(to_global_array, pytree)
 
 
-@dataclass
+@dataclass(frozen=True)
 class SJITCompiledFunction(object):
     """ SJIT compiled function with extra attribute for easy access. """
     mesh: MeshShardingHelper
